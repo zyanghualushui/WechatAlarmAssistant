@@ -1,37 +1,67 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch:
+workflow_dispatch:
+push:
+branches:
+- main
+
+permissions:
+contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+build:
+runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@v4
 
-      - name: Extract project
-        run: |
-          mkdir project
-          unzip -q *.zip -d project
-          cp -r project/* .
+  - name: Set up Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '17'
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+  - name: Set up Gradle
+    uses: gradle/actions/setup-gradle@v4
+    with:
+      gradle-version: '8.9'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
+  - name: Extract Android project
+    run: |
+      mkdir -p project
+      unzip -q WechatAlarmAssistant-project-1.zip -d project
+      cp -a project/app .
+      cp project/settings.gradle.kts project/build.gradle.kts project/gradle.properties .
 
-      - name: Build APK
-        run: gradle :app:assembleDebug
+  - name: Fix JVM target compatibility
+    run: |
+      python3 - <<'PY'
+      from pathlib import Path
+      p = Path("app/build.gradle.kts")
+      s = p.read_text()
+      if "compileOptions" not in s:
+          s = s.replace("android {", """android {
+          compileOptions {
+              sourceCompatibility = JavaVersion.VERSION_17
+              targetCompatibility = JavaVersion.VERSION_17
+          }
+      """, 1)
+      if "kotlinOptions" not in s:
+          s = s.replace("android {", """android {
+          kotlinOptions {
+              jvmTarget = "17"
+          }
+      """, 1)
+      p.write_text(s)
+      PY
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: WechatAlarmAssistant
-          path: app/build/outputs/apk/debug/app-debug.apk
+  - name: Build APK
+    run: gradle :app:assembleDebug
+
+  - name: Upload APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: WechatAlarmAssistant-debug
+      path: app/build/outputs/apk/debug/app-debug.apk
